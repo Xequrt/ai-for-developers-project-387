@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'motion/react'
 import { getOwnerProfile, getUpcomingBookings, getEventTypes, createEventType, updateEventType, deleteEventType } from '../api/client'
 import type { Booking, EventType, Owner } from '../types'
 import { useThemeColors } from '../utils/useThemeColors'
+import { escapeHtml } from '../utils/escapeHtml'
 
 const pageVariants = {
   initial: { opacity: 0, x: 50 },
@@ -368,12 +369,12 @@ export function AdminPage() {
                     <Group justify="space-between" align="flex-start">
                       <Stack gap={4}>
                         <Group gap="xs" align="center">
-                          <Avatar size={32} radius="xl" color={c.mantineColor}>{booking.guestName.charAt(0).toUpperCase()}</Avatar>
-                          <Text fw={600} size="sm" style={{ color: c.textPrimary }}>{booking.guestName}</Text>
+                          <Avatar size={32} radius="xl" color={c.mantineColor}>{escapeHtml(booking.guestName).charAt(0).toUpperCase()}</Avatar>
+                          <Text fw={600} size="sm" style={{ color: c.textPrimary }}>{escapeHtml(booking.guestName)}</Text>
                         </Group>
-                        <Text size="xs" style={{ color: c.textTertiary, paddingLeft: 40 }}>{booking.guestEmail}</Text>
+                        <Text size="xs" style={{ color: c.textTertiary, paddingLeft: 40 }}>{escapeHtml(booking.guestEmail)}</Text>
                         {booking.notes && (
-                          <Text size="xs" style={{ color: c.textSecondary, paddingLeft: 40, fontStyle: 'italic', maxWidth: 360 }}>«{booking.notes}»</Text>
+                          <Text size="xs" style={{ color: c.textSecondary, paddingLeft: 40, fontStyle: 'italic', maxWidth: 360 }}>«{escapeHtml(booking.notes)}»</Text>
                         )}
                       </Stack>
                       <Stack gap={6} align="flex-end">
