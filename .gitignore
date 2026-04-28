@@ -1,0 +1,75 @@
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.Python
+pip-wheel-metadata/
+
+# Виртуальные окружения
+.venv/
+venv/
+env/
+ENV/
+.env
+
+# ── Node / Frontend ───────────────────────────────────────────────────────────
+node_modules/
+frontend/node_modules/
+typespec/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/playwright-report/
+frontend/test-results/
+*.local
+
+# ── Переменные окружения ──────────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+.env.production
+.env.development
+backend/.env
+
+# ── Редакторы и IDE ───────────────────────────────────────────────────────────
+.vscode/settings.json
+.vscode/launch.json
+.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ── Тесты и покрытие ──────────────────────────────────────────────────────────
+.coverage
+coverage.json
+.pytest_cache/
+htmlcov/
+.tox/
+
+# ── Логи ─────────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── База данных ──────────────────────────────────────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+
+# ── TypeSpec артефакты ────────────────────────────────────────────────────────
+typespec/tsp-output/
+
+# ── Kiro IDE ──────────────────────────────────────────────────────────────────
+.kiro/
+
+# ── Agent-specific files ──────────────────────────────────────────────────────
+AGENTS.md
+DEVELOPMENT_PLAN.md

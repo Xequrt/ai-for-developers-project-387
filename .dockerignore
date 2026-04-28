@@ -1,0 +1,23 @@
+.git
+.github
+.kiro
+.vscode
+.env*
+
+# Python
+__pycache__/
+*.pyc
+*.db
+*.sqlite
+backend/tests/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+frontend/playwright-report/
+
+# Misc
+typespec/
+*.md
+Makefile
+openapi.yaml

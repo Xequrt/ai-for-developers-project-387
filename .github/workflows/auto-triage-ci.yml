@@ -1,0 +1,102 @@
+name: Auto Triage CI Failures
+
+on:
+  workflow_run:
+    workflows: ["*"]
+    types: [completed]
+
+jobs:
+  triage:
+    if: github.event.workflow_run.conclusion == 'failure'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      contents: read
+      actions: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Fetch workflow logs
+        id: logs
+        run: |
+          gh run view ${{ github.event.workflow_run.id }} --json jobs > workflow_jobs.json
+          echo "workflow_name=${{ github.event.workflow_run.name }}" >> $GITHUB_OUTPUT
+          echo "run_url=${{ github.event.workflow_run.html_url }}" >> $GITHUB_OUTPUT
+          
+          # Extract failed jobs
+          failed_jobs=$(jq -r '.jobs[] | select(.conclusion == "failure") | .name' workflow_jobs.json | head -5)
+          echo "failed_jobs<<EOF" >> $GITHUB_OUTPUT
+          echo "$failed_jobs" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Download failed job logs
+        run: |
+          for job_id in $(jq -r '.jobs[] | select(.conclusion == "failure") | .id' workflow_jobs.json | head -3); do
+            gh run download --job "$job_id" --dir "logs_$job_id" || true
+          done
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Read first error lines
+        id: errors
+        run: |
+          errors=""
+          for log_dir in logs_*; do
+            if [ -d "$log_dir" ]; then
+              err_file=$(find "$log_dir" -name "*.txt" -o -name "*.log" | head -1)
+              if [ -f "$err_file" ]; then
+                err_lines=$(grep -E "(Error|error|FAIL|failed|Exception|Traceback)" "$err_file" | head -5)
+                errors="${errors}${err_lines}\n"
+              fi
+            fi
+          done
+          
+          if [ -z "$errors" ]; then
+            errors=$(gh run view ${{ github.event.workflow_run.id }} --log | grep -E "(Error|error|FAIL|failed)" | head -10 || echo "Could not extract error details")
+          fi
+          
+          echo "errors<<EOF" >> $GITHUB_OUTPUT
+          echo -e "$errors" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Run OpenCode Auto-Triage CI
+        uses: anomalyco/opencode/github@latest
+        env:
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+        with:
+          model: opencode/minimax-m2.5-free
+          prompt: |
+            Запусти скилл auto-triage для анализа CI failure.
+            
+            Workflow: ${{ steps.logs.outputs.workflow_name }}
+            Run URL: ${{ steps.logs.outputs.run_url }}
+            Branch: ${{ github.event.workflow_run.head_branch }}
+            Commit: ${{ github.event.workflow_run.head_sha }}
+            Failed jobs: ${{ steps.logs.outputs.failed_jobs }}
+            Error lines: ${{ steps.errors.outputs.errors }}
+            
+            Твоя задача:
+            1. Классифицируй тип: flaky-test, regression, infrastructure, dependency, config
+            2. Определи severity: P0 (main broken), P1 (e2e/nightly), P2 (non-critical)
+            3. Проверь на дубликаты (поищи issues с ci-failure label)
+            4. Создай issue с подробным описанием:
+               - Workflow name и run URL
+               - Summary ошибки (первые 20 строк + ключевая ошибка)
+               - Классификация и severity
+               - Предложенный assignee по области
+            5. Примени labels: ci-failure, тип, severity
+            6. Если flaky-test — предложи auto-retry
+            
+            Используй gh CLI для создания issue и применения labels.
+            
+            Формат ответа:
+            - Тип: [тип]
+            - Severity: [P0/P1/P2]
+            - Создан issue: #[номер] (или дубликат #[номер])

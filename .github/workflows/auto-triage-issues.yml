@@ -1,0 +1,41 @@
+name: Auto Triage Issues
+
+on:
+  issues:
+    types: [opened, edited]
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Run OpenCode Auto-Triage
+        uses: anomalyco/opencode/github@latest
+        env:
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+        with:
+          model: opencode/minimax-m2.5-free
+          prompt: |
+            Запусти скилл auto-triage для обработки GitHub issue.
+            
+            Issue #${{ github.event.issue.number }}
+            Title: ${{ github.event.issue.title }}
+            Author: @${{ github.event.issue.user.login }}
+            Body: ${{ github.event.issue.body }}
+            
+            Твоя задача:
+            1. Классифицируй тип: bug, feature, question, documentation, duplicate, infrastructure
+            2. Определи область: frontend, backend, api, ci-cd, tests, infrastructure
+            3. Установи приоритет: P0, P1, P2, P3
+            4. Проверь на дубликаты (поищи по ключевым словам)
+            5. Напиши умный ответ на русском языке
+            6. Примени labels: тип + область + приоритет
+            
+            Используй gh CLI для применения labels и комментариев.

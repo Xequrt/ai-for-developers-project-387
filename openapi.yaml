@@ -1,0 +1,752 @@
+# =============================================================================
+# ОТЧЁТ О ПРОВЕРКЕ ПОКРЫТИЯ СЦЕНАРИЕВ (задачи 3.1–3.5)
+# Дата проверки: 2026
+# =============================================================================
+#
+# 3.1 СЦЕНАРИЙ ВЛАДЕЛЬЦА
+#   POST /api/v1/owner/event-types → 201 EventType          ✓
+#   GET  /api/v1/owner/bookings/upcoming → PaginatedBookings ✓
+#
+# 3.2 СЦЕНАРИЙ ГОСТЯ
+#   GET  /api/v1/event-types → EventType[]                  ✓
+#   GET  /api/v1/available-slots?eventTypeId&date → TimeSlot[] ✓
+#   GET  /api/v1/available-slots/summary?eventTypeId&month → DayAvailability[] ✓
+#   POST /api/v1/bookings → 201 Booking                     ✓
+#
+# 3.3 ПРАВИЛО ЗАНЯТОСТИ
+#   POST /api/v1/bookings → 409 ErrorResponse при конфликте ✓
+#
+# 3.4 ГРАНИЧНЫЕ СЛУЧАИ
+#   GET /available-slots для нерабочего дня → [] (задокументировано в description) ✓
+#   POST /bookings с startTime в прошлом → 400 ErrorResponse ✓
+#   POST /bookings с несуществующим eventTypeId → 404 ErrorResponse ✓ (добавлено)
+#
+# 3.5 ВАЛИДНОСТЬ OpenAPI
+#   Все $ref ссылки разрешены                               ✓ (исправлено: убраны
+#     невалидные description рядом с $ref, заменены на allOf)
+#   Все required поля указаны                               ✓
+#   Все операции имеют operationId                          ✓
+#
+# ИСПРАВЛЕНИЯ:
+#   - Убраны невалидные `description` рядом с `$ref` в схемах компонентов
+#     (в OpenAPI 3.0 description рядом с $ref игнорируется; использован allOf)
+#   - Добавлен ответ 404 для POST /api/v1/bookings
+#     (несуществующий eventTypeId → EVENT_TYPE_NOT_FOUND)
+#   - Добавлено описание поведения при нерабочем дне в GET /available-slots
+# =============================================================================
+
+openapi: "3.0.0"
+info:
+  title: "Calendar of Calls — Booking API"
+  version: "1.0.0"
+servers:
+  - url: "http://localhost:8000"
+    description: "Local development server"
+
+paths:
+  /api/v1/event-types:
+    get:
+      operationId: Public_listEventTypes
+      summary: Получить список всех типов событий
+      tags:
+        - Public
+      responses:
+        "200":
+          description: Список типов событий
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EventType"
+
+  /api/v1/available-slots:
+    get:
+      operationId: Public_getAvailableSlots
+      summary: Получить доступные слоты для выбранного типа события и даты
+      description: |
+        Возвращает список временных слотов для указанной даты и типа события.
+        Если дата является нерабочим днём (workingHours.enabled = false),
+        возвращается пустой массив [].
+        Слоты в прошлом не включаются в ответ.
+      tags:
+        - Public
+      parameters:
+        - name: eventTypeId
+          in: query
+          required: true
+          description: "UUID типа события"
+          schema:
+            $ref: "#/components/schemas/UUID"
+        - name: date
+          in: query
+          required: true
+          description: "Дата в формате YYYY-MM-DD"
+          schema:
+            $ref: "#/components/schemas/DateString"
+      responses:
+        "200":
+          description: |
+            Список временных слотов. Пустой массив если день нерабочий
+            или нет доступных слотов.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TimeSlot"
+        "404":
+          description: Тип события не найден
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/available-slots/summary:
+    get:
+      operationId: Public_getAvailableSlotsSummary
+      summary: Получить сводку по количеству свободных слотов на каждый день месяца
+      description: |
+        Возвращает количество свободных слотов для каждого дня указанного месяца.
+        Используется для отображения счётчиков под датами в календаре.
+        Нерабочие дни возвращаются с availableCount = 0.
+      tags:
+        - Public
+      parameters:
+        - name: eventTypeId
+          in: query
+          required: true
+          description: "UUID типа события"
+          schema:
+            $ref: "#/components/schemas/UUID"
+        - name: month
+          in: query
+          required: true
+          description: "Месяц в формате YYYY-MM"
+          schema:
+            type: string
+            example: "2026-03"
+      responses:
+        "200":
+          description: Сводка доступности по дням месяца
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DayAvailability"
+        "404":
+          description: Тип события не найден
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/bookings:
+    post:
+      operationId: Public_createBooking
+      summary: Создать бронирование на выбранный слот
+      description: |
+        Создаёт новое бронирование. Правило занятости: на одно время может быть
+        только одно бронирование независимо от типа события.
+        Граничные случаи:
+        - startTime в прошлом → 400 VALIDATION_ERROR
+        - несуществующий eventTypeId → 404 EVENT_TYPE_NOT_FOUND
+        - слот уже занят → 409 SLOT_OCCUPIED
+      tags:
+        - Public
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBookingRequest"
+      responses:
+        "201":
+          description: Бронирование успешно создано
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Booking"
+        "400":
+          description: |
+            Ошибка валидации. Возможные коды:
+            - VALIDATION_ERROR: startTime в прошлом, невалидный email, пустое имя и т.д.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: "VALIDATION_ERROR"
+                  message: "Некорректные данные запроса."
+                  details:
+                    startTime: "Время не может быть в прошлом"
+        "404":
+          description: |
+            Тип события не найден. Код: EVENT_TYPE_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: "EVENT_TYPE_NOT_FOUND"
+                  message: "Тип события не найден."
+        "409":
+          description: |
+            Слот уже занят. Код: SLOT_OCCUPIED.
+            Возникает при пересечении временных интервалов с любым
+            существующим подтверждённым бронированием.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: "SLOT_OCCUPIED"
+                  message: "Выбранное время уже занято. Пожалуйста, выберите другой слот."
+                  details:
+                    conflictingBookingId: "550e8400-e29b-41d4-a716-446655440000"
+
+  /api/v1/owner/profile:
+    get:
+      operationId: OwnerApi_getProfile
+      summary: Получить профиль владельца
+      tags:
+        - OwnerApi
+      responses:
+        "200":
+          description: Профиль владельца
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Owner"
+
+  /api/v1/owner/event-types:
+    post:
+      operationId: OwnerApi_createEventType
+      summary: Создать новый тип события
+      tags:
+        - OwnerApi
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateEventTypeRequest"
+      responses:
+        "201":
+          description: Тип события успешно создан
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventType"
+        "400":
+          description: Ошибка валидации
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/owner/event-types/{id}:
+    get:
+      operationId: OwnerApi_getEventType
+      summary: Получить тип события по ID
+      tags:
+        - OwnerApi
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: "UUID типа события"
+          schema:
+            $ref: "#/components/schemas/UUID"
+      responses:
+        "200":
+          description: Тип события
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventType"
+        "404":
+          description: Тип события не найден
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    put:
+      operationId: OwnerApi_updateEventType
+      summary: Обновить тип события
+      tags:
+        - OwnerApi
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: "UUID типа события"
+          schema:
+            $ref: "#/components/schemas/UUID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateEventTypeRequest"
+      responses:
+        "200":
+          description: Тип события обновлён
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventType"
+        "400":
+          description: Ошибка валидации
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Тип события не найден
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: OwnerApi_deleteEventType
+      summary: Удалить тип события
+      tags:
+        - OwnerApi
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: "UUID типа события"
+          schema:
+            $ref: "#/components/schemas/UUID"
+      responses:
+        "204":
+          description: Тип события удалён
+        "404":
+          description: Тип события не найден
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/owner/bookings/upcoming:
+    get:
+      operationId: OwnerApi_listUpcomingBookings
+      summary: Получить все предстоящие бронирования
+      description: "Возвращает все будущие бронирования по всем типам событий, отсортированные по startTime."
+      tags:
+        - OwnerApi
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: "Максимальное количество элементов на странице"
+          schema:
+            type: integer
+            format: int32
+        - name: offset
+          in: query
+          required: false
+          description: "Смещение от начала списка"
+          schema:
+            type: integer
+            format: int32
+      responses:
+        "200":
+          description: Пагинированный список бронирований
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedBookings"
+
+  /api/v1/owner/bookings/{id}:
+    get:
+      operationId: OwnerApi_getBooking
+      summary: Получить бронирование по ID
+      tags:
+        - OwnerApi
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: "UUID бронирования"
+          schema:
+            $ref: "#/components/schemas/UUID"
+      responses:
+        "200":
+          description: Бронирование
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Booking"
+        "404":
+          description: Бронирование не найдено
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: OwnerApi_cancelBooking
+      summary: Отменить бронирование
+      tags:
+        - OwnerApi
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: "UUID бронирования"
+          schema:
+            $ref: "#/components/schemas/UUID"
+      responses:
+        "204":
+          description: Бронирование отменено
+        "404":
+          description: Бронирование не найдено
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+components:
+  schemas:
+    UUID:
+      type: string
+      description: "UUID v4 идентификатор"
+      example: "550e8400-e29b-41d4-a716-446655440000"
+
+    DateTime:
+      type: string
+      description: "ISO 8601 дата-время (UTC)"
+      example: "2026-03-15T09:00:00.000Z"
+
+    TimeString:
+      type: string
+      description: "Время в формате HH:MM"
+      example: "09:00"
+
+    DateString:
+      type: string
+      description: "Дата в формате YYYY-MM-DD"
+      example: "2026-03-15"
+
+    BookingStatus:
+      type: string
+      enum:
+        - confirmed
+        - cancelled
+      description: "Статус бронирования"
+
+    EventType:
+      type: object
+      description: "Тип события, создаваемый владельцем календаря"
+      required:
+        - id
+        - name
+        - description
+        - durationMinutes
+        - createdAt
+      properties:
+        id:
+          allOf:
+            - $ref: "#/components/schemas/UUID"
+          description: "Уникальный идентификатор"
+        name:
+          type: string
+          description: "Название типа события (1–100 символов)"
+        description:
+          type: string
+          description: "Описание события (0–500 символов)"
+        durationMinutes:
+          type: integer
+          format: int32
+          description: "Длительность встречи в минутах (кратно 15, > 0)"
+        createdAt:
+          allOf:
+            - $ref: "#/components/schemas/DateTime"
+          description: "Дата и время создания"
+
+    Booking:
+      type: object
+      description: "Бронирование слота гостем"
+      required:
+        - id
+        - eventTypeId
+        - startTime
+        - endTime
+        - guestName
+        - guestEmail
+        - status
+        - createdAt
+      properties:
+        id:
+          allOf:
+            - $ref: "#/components/schemas/UUID"
+          description: "Уникальный идентификатор"
+        eventTypeId:
+          allOf:
+            - $ref: "#/components/schemas/UUID"
+          description: "Ссылка на тип события"
+        startTime:
+          allOf:
+            - $ref: "#/components/schemas/DateTime"
+          description: "Начало встречи (ISO 8601 UTC)"
+        endTime:
+          allOf:
+            - $ref: "#/components/schemas/DateTime"
+          description: "Конец встречи (ISO 8601 UTC)"
+        guestName:
+          type: string
+          description: "Имя гостя (1–100 символов)"
+        guestEmail:
+          type: string
+          format: email
+          description: "Email гостя"
+        guestPhone:
+          type: string
+          description: "Телефон гостя в формате E.164 (опционально)"
+        notes:
+          type: string
+          description: "Заметки гостя (0–1000 символов, опционально)"
+        status:
+          $ref: "#/components/schemas/BookingStatus"
+        createdAt:
+          allOf:
+            - $ref: "#/components/schemas/DateTime"
+          description: "Дата и время создания записи"
+
+    TimeSlot:
+      type: object
+      description: "Временной слот для отображения доступности"
+      required:
+        - startTime
+        - endTime
+        - available
+      properties:
+        startTime:
+          allOf:
+            - $ref: "#/components/schemas/DateTime"
+          description: "Начало слота (ISO 8601 UTC)"
+        endTime:
+          allOf:
+            - $ref: "#/components/schemas/DateTime"
+          description: "Конец слота (ISO 8601 UTC)"
+        available:
+          type: boolean
+          description: "Доступен ли слот для бронирования"
+        bookingId:
+          allOf:
+            - $ref: "#/components/schemas/UUID"
+          description: "ID бронирования, если слот занят"
+
+    DayAvailability:
+      type: object
+      description: "Количество свободных слотов для конкретной даты (для счётчика в календаре)"
+      required:
+        - date
+        - availableCount
+      properties:
+        date:
+          allOf:
+            - $ref: "#/components/schemas/DateString"
+          description: "Дата в формате YYYY-MM-DD"
+        availableCount:
+          type: integer
+          format: int32
+          description: "Количество свободных слотов (0 для нерабочих дней)"
+
+    DaySchedule:
+      type: object
+      description: "Расписание одного дня"
+      required:
+        - enabled
+        - startTime
+        - endTime
+      properties:
+        enabled:
+          type: boolean
+          description: "Является ли день рабочим. Если false — слоты не генерируются."
+        startTime:
+          allOf:
+            - $ref: "#/components/schemas/TimeString"
+          description: "Начало рабочего дня (HH:MM)"
+        endTime:
+          allOf:
+            - $ref: "#/components/schemas/TimeString"
+          description: "Конец рабочего дня (HH:MM)"
+
+    WorkingHours:
+      type: object
+      description: "Рабочие часы владельца по дням недели"
+      required:
+        - monday
+        - tuesday
+        - wednesday
+        - thursday
+        - friday
+        - saturday
+        - sunday
+      properties:
+        monday:
+          $ref: "#/components/schemas/DaySchedule"
+        tuesday:
+          $ref: "#/components/schemas/DaySchedule"
+        wednesday:
+          $ref: "#/components/schemas/DaySchedule"
+        thursday:
+          $ref: "#/components/schemas/DaySchedule"
+        friday:
+          $ref: "#/components/schemas/DaySchedule"
+        saturday:
+          $ref: "#/components/schemas/DaySchedule"
+        sunday:
+          $ref: "#/components/schemas/DaySchedule"
+
+    Owner:
+      type: object
+      description: "Профиль владельца календаря (предустановленный)"
+      required:
+        - id
+        - name
+        - email
+        - timezone
+        - workingHours
+      properties:
+        id:
+          allOf:
+            - $ref: "#/components/schemas/UUID"
+          description: "Фиксированный UUID владельца"
+        name:
+          type: string
+          description: "Имя владельца"
+        email:
+          type: string
+          format: email
+          description: "Email владельца"
+        timezone:
+          type: string
+          description: "Часовой пояс в формате IANA (например, \"Europe/Moscow\")"
+          example: "Europe/Moscow"
+        workingHours:
+          $ref: "#/components/schemas/WorkingHours"
+
+    CreateEventTypeRequest:
+      type: object
+      description: "Тело запроса на создание типа события"
+      required:
+        - name
+        - description
+        - durationMinutes
+      properties:
+        name:
+          type: string
+          description: "Название (1–100 символов)"
+        description:
+          type: string
+          description: "Описание (0–500 символов)"
+        durationMinutes:
+          type: integer
+          format: int32
+          description: "Длительность в минутах (кратно 15, > 0)"
+          example: 30
+
+    UpdateEventTypeRequest:
+      type: object
+      description: "Тело запроса на обновление типа события (все поля опциональны)"
+      properties:
+        name:
+          type: string
+          description: "Новое название (1–100 символов)"
+        description:
+          type: string
+          description: "Новое описание (0–500 символов)"
+        durationMinutes:
+          type: integer
+          format: int32
+          description: "Новая длительность в минутах (кратно 15, > 0)"
+
+    CreateBookingRequest:
+      type: object
+      description: "Тело запроса на создание бронирования"
+      required:
+        - eventTypeId
+        - startTime
+        - guestName
+        - guestEmail
+      properties:
+        eventTypeId:
+          allOf:
+            - $ref: "#/components/schemas/UUID"
+          description: "ID типа события. Должен существовать в системе, иначе 404."
+        startTime:
+          allOf:
+            - $ref: "#/components/schemas/DateTime"
+          description: "Желаемое время начала (ISO 8601 UTC). Не может быть в прошлом."
+        guestName:
+          type: string
+          description: "Имя гостя (1–100 символов)"
+        guestEmail:
+          type: string
+          format: email
+          description: "Email гостя"
+        guestPhone:
+          type: string
+          description: "Телефон гостя в формате E.164 (опционально)"
+        notes:
+          type: string
+          description: "Заметки (0–1000 символов, опционально)"
+
+    PaginatedBookings:
+      type: object
+      description: "Пагинированный список бронирований"
+      required:
+        - items
+        - total
+        - limit
+        - offset
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Booking"
+          description: "Список бронирований"
+        total:
+          type: integer
+          format: int32
+          description: "Общее количество бронирований"
+        limit:
+          type: integer
+          format: int32
+          description: "Максимальное количество элементов на странице"
+        offset:
+          type: integer
+          format: int32
+          description: "Смещение от начала списка"
+
+    ErrorResponse:
+      type: object
+      description: "Стандартный ответ об ошибке"
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+              description: "Машиночитаемый код ошибки"
+              example: "SLOT_OCCUPIED"
+            message:
+              type: string
+              description: "Человекочитаемое сообщение"
+            details:
+              type: object
+              additionalProperties: true
+              description: "Дополнительные детали (опционально)"
