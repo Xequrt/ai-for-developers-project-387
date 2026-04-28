@@ -8,6 +8,7 @@ jobs:
   triage:
     runs-on: ubuntu-latest
     permissions:
+      id-token: write
       issues: write
       contents: read
     steps:

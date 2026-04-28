@@ -10,6 +10,7 @@ jobs:
     if: github.event.workflow_run.conclusion == 'failure'
     runs-on: ubuntu-latest
     permissions:
+      id-token: write
       issues: write
       contents: read
       actions: read
