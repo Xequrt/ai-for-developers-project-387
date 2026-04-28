@@ -22,9 +22,13 @@ jobs:
         id: diff
         run: |
           git diff --stat origin/${{ github.base_ref }}...HEAD > diff_stat.txt
-          echo "diff_stat=$(cat diff_stat.txt)" >> $GITHUB_OUTPUT
+          {
+            echo "diff_stat<<EOF"
+            cat diff_stat.txt
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
           lines_changed=$(git diff --numstat origin/${{ github.base_ref }}...HEAD | awk '{sum+=$1+$2} END {print sum}')
-          echo "lines_changed=$lines_changed" >> $GITHUB_OUTPUT
+          echo "lines_changed=$lines_changed" >> "$GITHUB_OUTPUT"
 
       - name: Run OpenCode Auto-Triage PR
         uses: anomalyco/opencode/github@latest
