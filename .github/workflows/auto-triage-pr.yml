@@ -35,32 +35,18 @@ jobs:
           echo "lines_changed=$lines_changed" >> "$GITHUB_OUTPUT"
 
       - name: Run OpenCode Auto-Triage PR
-        uses: anomalyco/opencode/github@latest
+        uses: ./.github/actions/auto-triage-pr
+        with:
+          pr_number: ${{ github.event.pull_request.number }}
+          title: ${{ github.event.pull_request.title }}
+          author: ${{ github.event.pull_request.user.login }}
+          body: ${{ github.event.pull_request.body }}
+          changed_files: ${{ github.event.pull_request.changed_files }}
+          lines_changed: ${{ steps.diff.outputs.lines_changed }}
+          diff_stat: ${{ steps.diff.outputs.diff_stat }}
         env:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
-        with:
-          model: opencode/minimax-m2.5-free
-          prompt: |
-            Запусти скилл auto-triage для обработки Pull Request.
-            
-            PR #${{ github.event.pull_request.number }}
-            Title: ${{ github.event.pull_request.title }}
-            Author: @${{ github.event.pull_request.user.login }}
-            Body: ${{ github.event.pull_request.body }}
-            Changed files: ${{ github.event.pull_request.changed_files }}
-            Lines changed: ${{ steps.diff.outputs.lines_changed }}
-            Diff stats: ${{ steps.diff.outputs.diff_stat }}
-            
-            Твоя задача:
-            1. Определи области по changed files: frontend, backend, api, ci-cd, tests, infrastructure
-            2. Оцени размер: XS(1-10), S(11-50), M(51-200), L(201-500), XL(500+)
-            3. Проверь полноту описания (наличие ссылки на issue, описание изменений)
-            4. Проверь наличие тестов (есть ли изменения в test/ или __tests__/)
-            5. Напиши начальный review комментарий с summary
-            6. Примени labels: области + размер
-            7. Установи status check (success/failure) — failure блокирует merge если PR пустой, без описания, или XL без review approval
-            
-            Используй gh CLI для labels, комментариев и статусов.
+
 
       - name: Set merge status check
         if: always()
