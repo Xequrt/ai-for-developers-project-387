@@ -1,0 +1,66 @@
+name: 'Auto Triage CI Failures'
+description: 'Triages failed CI workflow runs using OpenCode'
+inputs:
+  workflow_name:
+    description: 'Name of the failed workflow'
+    required: true
+  run_url:
+    description: 'URL of the failed workflow run'
+    required: true
+  branch:
+    description: 'Branch where the failure occurred'
+    required: true
+  commit:
+    description: 'Commit SHA that triggered the workflow'
+    required: true
+  failed_jobs:
+    description: 'List of failed job names'
+    required: false
+  error_lines:
+    description: 'Error lines from the failed jobs'
+    required: false
+runs:
+  using: 'composite'
+  steps:
+    - run: |
+        # Устанавливаем OpenCode если не установлен
+        if ! command -v opencode &> /dev/null; then
+          curl -fsSL https://opencode.ai/install | bash
+          echo "$HOME/.opencode/bin" >> $GITHUB_PATH
+        fi
+        
+        # Формируем промпт для OpenCode
+        PROMPT="Запусти скилл auto-triage для анализа CI failure.
+        
+        Workflow: ${{ inputs.workflow_name }}
+        Run URL: ${{ inputs.run_url }}
+        Branch: ${{ inputs.branch }}
+        Commit: ${{ inputs.commit }}
+        Failed jobs: ${{ inputs.failed_jobs }}
+        Error lines: ${{ inputs.error_lines }}
+        
+        Твоя задача:
+        1. Классифицируй тип: flaky-test, regression, infrastructure, dependency, config
+        2. Определи severity: P0 (main broken), P1 (e2e/nightly), P2 (non-critical)
+        3. Проверь на дубликаты (поищи issues с ci-failure label)
+        4. Создай issue с подробным описанием:
+           - Workflow name и run URL
+           - Summary ошибки (первые 20 строк + ключевая ошибка)
+           - Классификация и severity
+           - Предложенный assignee по области
+        5. Примени labels: ci-failure, тип, severity
+        6. Если flaky-test — предложи auto-retry
+        
+        Используй gh CLI для создания issue и применения labels.
+        
+        Формат ответа:
+        - Тип: [тип]
+        - Severity: [P0/P1/P2]
+        - Создан issue: #[номер] (или дубликат #[номер])"
+        
+        # Выполняем triage через OpenCode
+        opencode --model opencode/minimax-m2.5-free --prompt "$PROMPT"
+      shell: bash
+      env:
+        OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+        GH_TOKEN: ${{ github.token }}
