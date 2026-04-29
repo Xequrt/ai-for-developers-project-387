@@ -1,0 +1,69 @@
+name: 'Auto Triage PR'
+description: 'Triages Pull Requests using OpenCode'
+inputs:
+  pr_number:
+    description: 'Pull Request number'
+    required: true
+  title:
+    description: 'Pull Request title'
+    required: true
+  author:
+    description: 'Pull Request author'
+    required: true
+  body:
+    description: 'Pull Request body'
+    required: false
+  changed_files:
+    description: 'Number of changed files'
+    required: true
+  lines_changed:
+    description: 'Number of lines changed'
+    required: true
+  diff_stat:
+    description: 'Diff statistics'
+    required: false
+runs:
+  using: 'composite'
+  steps:
+    - run: |
+        # Устанавливаем OpenCode если не установлен
+        if ! command -v opencode &> /dev/null; then
+          curl -fsSL https://opencode.ai/install | bash
+          echo "$HOME/.opencode/bin" >> $GITHUB_PATH
+        fi
+        
+        # Формируем промпт для OpenCode
+        PROMPT="Запусти скилл auto-triage для обработки Pull Request.
+        
+        PR #${{ inputs.pr_number }}
+        Title: ${{ inputs.title }}
+        Author: @${{ inputs.author }}
+        Body: ${{ inputs.body }}
+        Changed files: ${{ inputs.changed_files }}
+        Lines changed: ${{ inputs.lines_changed }}
+        Diff stats: ${{ inputs.diff_stat }}
+        
+        Твоя задача:
+        1. Определи области по changed files: frontend, backend, api, ci-cd, tests, infrastructure
+        2. Оцени размер: XS(1-10), S(11-50), M(51-200), L(201-500), XL(500+)
+        3. Проверь полноту описания (наличие ссылки на issue, описание изменений)
+        4. Проверь наличие тестов (есть ли изменения в test/ или __tests__/)
+        5. Напиши начальный review комментарий с summary
+        6. Примени labels: области + размер
+        7. Установи status check (success/failure) — failure блокирует merge если PR пустой, без описания, или XL без review approval
+        
+        Используй gh CLI для labels, комментариев и статусов.
+        
+        Формат ответа:
+        - Области: [список областей через запятую]
+        - Размер: [XS/S/M/L/XL]
+        - Статус: [success/failure] с пояснением
+        - Комментарий: [твой review комментарий]"
+        
+        # Выполняем triage через OpenCode
+        opencode --model opencode/minimax-m2.5-free --prompt "$PROMPT"
+      shell: bash
+      env:
+        OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+        GH_TOKEN: ${{ github.token }}
+        GITHUB_TOKEN: ${{ github.token }}

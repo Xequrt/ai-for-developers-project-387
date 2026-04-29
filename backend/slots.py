@@ -69,12 +69,16 @@ def generate_slots(
     return slots
 
 
-def get_booked_intervals(bookings: dict) -> list[tuple[datetime, datetime, str]]:
-    """Возвращает список (start, end, booking_id) для confirmed бронирований."""
+def get_booked_intervals(bookings: dict, event_type_id: str | None = None) -> list[tuple[datetime, datetime, str]]:
+    """Возвращает список (start, end, booking_id) для confirmed бронирований.
+    
+    Если event_type_id указан, фильтрует только бронирования этого типа.
+    """
     intervals = []
     for b in bookings.values():
         if b.status == "confirmed":
-            # Парсим как naive datetime для сравнения с локальными слотами
+            if event_type_id is not None and b.eventTypeId != event_type_id:
+                continue
             start = datetime.fromisoformat(b.startTime.replace("Z", ""))
             end = datetime.fromisoformat(b.endTime.replace("Z", ""))
             intervals.append((start, end, b.id))

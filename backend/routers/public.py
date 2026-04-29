@@ -64,7 +64,7 @@ def get_available_slots(
     owner = row_to_owner(owner_row)
 
     bookings_dict = {r.id: row_to_booking(r) for r in session.query(BookingRow).all()}
-    booked = get_booked_intervals(bookings_dict)
+    booked = get_booked_intervals(bookings_dict, eventTypeId)
     return generate_slots(date, et.duration_minutes, owner.workingHours, booked, owner.timezone)
 
 
@@ -88,7 +88,7 @@ def get_available_slots_summary(
     window_end = today + timedelta(days=14)
 
     bookings_dict = {r.id: row_to_booking(r) for r in session.query(BookingRow).all()}
-    booked = get_booked_intervals(bookings_dict)
+    booked = get_booked_intervals(bookings_dict, eventTypeId)
 
     result = []
     for day in range(1, days_in_month + 1):
@@ -121,7 +121,10 @@ def create_booking(body: CreateBookingRequest, session: Session = Depends(get_db
 
     end_dt = start_dt + timedelta(minutes=et.duration_minutes)
 
-    confirmed = session.query(BookingRow).filter(BookingRow.status == "confirmed").all()
+    confirmed = session.query(BookingRow).filter(
+        BookingRow.status == "confirmed",
+        BookingRow.event_type_id == body.eventTypeId,
+    ).all()
     for b in confirmed:
         b_start = datetime.fromisoformat(b.start_time.replace("Z", ""))
         b_end = datetime.fromisoformat(b.end_time.replace("Z", ""))
