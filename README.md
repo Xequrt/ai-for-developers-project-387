@@ -149,3 +149,4 @@ make typespec-compile
 ## CI
 
 GitHub Actions запускает e2e тесты при каждом пуше в `develop` и `main`, а также при открытии PR в `main`. При падении тестов сохраняется Playwright-отчёт как артефакт.
+
