@@ -37,8 +37,10 @@ jobs:
         uses: anomalyco/opencode/github@latest
         env:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+          GH_TOKEN: ${{ github.token }}
         with:
           model: opencode/minimax-m2.5-free
+          use_github_token: true
           prompt: |
             Запусти скилл auto-triage для обработки Pull Request.
             
